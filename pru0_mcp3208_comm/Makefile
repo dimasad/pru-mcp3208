@@ -37,7 +37,7 @@ all: $(TARGET)
 install:
 	cp $(TARGET) /lib/firmware/$(PROJ_NAME)
 
-run: install
+deploy: install
 	-echo stop > $(RPROC)/state
 	echo $(PROJ_NAME) > $(RPROC)/firmware
 	echo start > $(RPROC)/state

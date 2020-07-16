@@ -1,4 +1,4 @@
-/*
+/**
  * Based on code from the Texas Instruments PRU examples.
  */
 
@@ -11,15 +11,14 @@
 #include <pru_rpmsg.h>
 
 #include "resource_table_1.h"
-
-#define PRUNUM 1
 #include "../pru_common/shared_buffer.h"
 
 volatile register uint32_t __R30;
 volatile register uint32_t __R31;
 
-/* Host-1 Interrupt sets bit 31 in register R31 */
-#define HOST_INT			((uint32_t) 1 << 31)
+// Bit mask of the Host-0 and Host-1 interrupts
+#define HOST0_INT			((uint32_t) 1 << 30)
+#define HOST1_INT			((uint32_t) 1 << 31)
 
 /* The PRU-ICSS system events for RPMsg are defined in the Linux device tree
  * PRU0 uses system event 16 (To ARM) and 17 (From ARM)
@@ -40,8 +39,15 @@ volatile register uint32_t __R31;
  */
 #define VIRTIO_CONFIG_S_DRIVER_OK	4
 
-uint8_t in_payload[RPMSG_MESSAGE_SIZE];
-uint8_t out_payload[RPMSG_MESSAGE_SIZE];
+#define NUM_OUT_BUFFERS                 2
+Buffer out_buffer[NUM_OUT_BUFFERS];
+uint8_t out_buffer_status[NUM_OUT_BUFFERS];
+uint8_t out_buffer_index;
+
+enum {
+  BUFFER_FREE = 0,
+  BUFFER_FULL = 1,
+};
 
 void main(void) {
   struct pru_rpmsg_transport transport;
@@ -69,20 +75,20 @@ void main(void) {
      transport structure. */
   while (pru_rpmsg_channel(RPMSG_NS_CREATE, &transport, CHAN_NAME, CHAN_DESC, CHAN_PORT)
          != PRU_RPMSG_SUCCESS);
-
+  
   for (;;) {
     // Wait for PRU 0
-    while((__R31 & (1 << 30))==0);
+    while((__R31 & HOST0_INT) == 0);
     
     // Clear event 20
     CT_INTC.SICR = 20;
 
     uint8_t completed_buffer_index = *buffer_index ? 0 : 1;
     volatile Buffer *completed_buffer = buffer + completed_buffer_index;
-    memcpy(out_payload, completed_buffer, sizeof(Buffer));
+    memcpy(out_buffer, completed_buffer, sizeof(Buffer));
     
     // Send message to ARM
     pru_rpmsg_send(&transport, CHAN_PORT, PRU1_RPMSG_SRC,
-                   out_payload, sizeof(Buffer));
+                   out_buffer, sizeof(Buffer));
   }
 }

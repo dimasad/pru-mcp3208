@@ -1,3 +1,6 @@
+# Generated executables
+host_rpmsg_mcp3208
+
 # Prerequisites
 *.d
 
