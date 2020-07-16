@@ -238,23 +238,28 @@ void main() {
   CT_INTC.HIEISR = 0;                 // Enable Host interrupt 0
   CT_INTC.GER = 1;                    // Globally enable host interrupts
 
+  // Initialize buffer index
+  *buffer_index = 0;
+  
   // Start timer
   start_pru0_timer();
-  *buffer_index = 0;
-
+  
   int i = 0;
   for (;;) {
-    Buffer *curr_buff = buffer + *buffer_index;
+    volatile Buffer *curr_buff = buffer + *buffer_index;
     curr_buff->timestamp_ns = clock_ns();
-    curr_buff->data[0] = i++;
-    
+    curr_buff->data[0] = ++i;
+    curr_buff->data[1] = -i;
+    curr_buff->data[2] = 2*i;
+    curr_buff->data[3] = 4*i;
+
     // Switch buffers
     *buffer_index ^= 1;
     
     // Trigger event
     PRU0_PRU1_TRIGGER;
     
-    __delay_cycles(100000000);
+    __delay_cycles(100000000 - 2640/5);
   }
   
   __halt();

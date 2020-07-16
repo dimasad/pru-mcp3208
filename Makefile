@@ -1,7 +1,7 @@
 TOPTARGETS := all clean install run
 SUBDIRS := $(wildcard */.)
 
-all:
+all: pru_mcp3208_host
 $(TOPTARGETS): $(SUBDIRS)
 $(SUBDIRS):
 	$(MAKE) -C $@ $(MAKECMDGOALS)

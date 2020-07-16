@@ -11,6 +11,8 @@
 #include <pru_rpmsg.h>
 
 #include "resource_table_1.h"
+
+#define PRUNUM 1
 #include "../pru_common/shared_buffer.h"
 
 volatile register uint32_t __R30;
@@ -39,7 +41,7 @@ volatile register uint32_t __R31;
 #define VIRTIO_CONFIG_S_DRIVER_OK	4
 
 uint8_t in_payload[RPMSG_MESSAGE_SIZE];
-uint8_t out_payload[RPMSG_MESSAGE_SIZE] = "asdfg";
+uint8_t out_payload[RPMSG_MESSAGE_SIZE];
 
 void main(void) {
   struct pru_rpmsg_transport transport;
@@ -75,12 +77,12 @@ void main(void) {
     // Clear event 20
     CT_INTC.SICR = 20;
 
-    uint8_t completed_buffer_index = *buffer_index ^ 1;
+    uint8_t completed_buffer_index = *buffer_index ? 0 : 1;
     volatile Buffer *completed_buffer = buffer + completed_buffer_index;
-    memcpy(out_payload, completed_buffer, sizeof buffer);
+    memcpy(out_payload, completed_buffer, sizeof(Buffer));
     
     // Send message to ARM
     pru_rpmsg_send(&transport, CHAN_PORT, PRU1_RPMSG_SRC,
-                   out_payload, sizeof out_payload);
+                   out_payload, sizeof(Buffer));
   }
 }

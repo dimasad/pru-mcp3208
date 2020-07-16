@@ -10,7 +10,7 @@ static inline void stop_pru0_timer() {
 
 
 void manage_pru0_cycle_overflow() {
-  int cycle = PRU0_CTRL.CYCLE;
+  unsigned cycle = PRU0_CTRL.CYCLE;
   if (cycle & (1 << 31)) {
     // Reset counter to the approximate cycle count between the register is
     // read and the timer is restarted.
