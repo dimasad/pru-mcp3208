@@ -23,208 +23,103 @@ volatile register uint32_t __R31;
 #define PRU0_PRU1_EVT     (20)
 #define PRU0_PRU1_TRIGGER (__R31 = (PRU0_PRU1_EVT - 16) | (1 << 5))
 
-// SPI registers
-#define MISO_REG __R31 //P9_29
-#define MOSI_REG __R30 //P9_30
-#define SCLK_REG __R30 //P9_31
-#define CS_REG __R30 //P9_28
+// SPI registers bit masks
+#define MISO_MASK (1 << 1)
+#define MOSI_MASK (1 << 2)
+#define SCLK_MASK (1 << 0)
+#define CS_MASK   (1 << 3)
 
-#define MISO_MASK ((uint32_t)(1 << 1))
-#define MOSI_MASK ((uint32_t)(1 << 2))
-#define SCLK_MASK ((uint32_t)(1 << 0))
-#define CS_MASK ((uint32_t)(1 << 3))
+// MCP3208 timing delays, in PRU cycles (200MHz ==> 5ns / cycle)
+#define MCP3208_TSUCS_CYC    20 //CS~ Fall to First Rising CLK edge (min 100ns)
+#define MCP3208_THI_CYC      50 //Clock High Time (min 250ns)
+#define MCP3208_TLO_CYC      50 //Clock Low Time (min 250ns)
+#define MCP3208_TCSH_CYC     100//CS~ Disable Time (min 500ns)
+
+// Control bits of the scan elements
+static uint8_t scan_ctrl[NUM_SCAN_ELEMENTS] = {
+  0b1000, //Single ended, ch0
+  0b1001, //Single ended, ch1
+  0b1010, //Single ended, ch2
+  0b1011, //Single ended, ch3
+};
 
 static inline void mosi_set() {
-  MOSI_REG |= MOSI_MASK;
+  __R30 |= MOSI_MASK;
 }
 
 static inline void mosi_clr() {
-	MOSI_REG &= ~MOSI_MASK;
+  __R30 &= ~MOSI_MASK;
 }
 
 static inline void sclk_set() {
-	SCLK_REG |= SCLK_MASK;
+  __R30 |= SCLK_MASK;
 }
 
 static inline void sclk_clr() {
-	SCLK_REG &= ~SCLK_MASK;
+  __R30 &= ~SCLK_MASK;
 }
 
 static inline void cs_set() {
-	CS_REG |= CS_MASK;
+  __R30 |= CS_MASK;
 }
 
 static inline void cs_clr() {
-	CS_REG &= ~CS_MASK;
+  __R30 &= ~CS_MASK;
 }
 
-static inline uint8_t miso_rd() {
-	if (MISO_REG & MISO_MASK)
-		return 1;
-	else
-		return 0;
+static inline uint32_t miso_rd() {
+  return __R31 & MISO_MASK;
 }
 
-uint16_t convert(char CH) { // ch -> number of channels
+uint16_t convert(uint8_t ctrl) {
+  cs_clr();   // Set CS to low (active)
+  mosi_set(); // Set MOSI to HIGH (start bit)
 
-	int ch = CH - '0';
+  sclk_clr();
+  __delay_cycles(MCP3208_TSUCS_CYC);
+  sclk_set();
+  __delay_cycles(MCP3208_THI_CYC);
+  
+  // Send control bits
+  uint8_t mask;
+  for (mask=0b1000; mask!=0; mask>>=1) {
+    sclk_clr();
+    if (ctrl & mask)
+      mosi_set();
+    else
+      mosi_clr();
+    
+    __delay_cycles(MCP3208_TLO_CYC);
+    sclk_set();
+    __delay_cycles(MCP3208_THI_CYC);
+  }
 
-	sclk_clr(); // Initialize clock
-	cs_clr(); // Set CS to low (active)
-	mosi_set(); // Set MOSI to HIGH (start bit)
-	__delay_cycles(30); // 30 cycles = 150ns
+  // Wait for conversion (part of t_SAMPLE)
+  sclk_clr();
+  __delay_cycles(MCP3208_TLO_CYC);
+  sclk_set();
+  __delay_cycles(MCP3208_THI_CYC);
 
-	sclk_set(); // cycle clock (data transfer)
-	__delay_cycles(100); // 100 cycles = 500ns
+  // Read the null bit and conversion result
+  int8_t i;
+  uint16_t result = 0;
+  for (i=0; i<13; i++){
+    sclk_clr();
+    __delay_cycles(MCP3208_TLO_CYC);
+    sclk_set();
 
-	// SGL / ~DIFF
-		sclk_clr();
-		mosi_set(); // Set SGL = 1 (single ended)
-		__delay_cycles(100); // 100 cycles = 500ns
-		sclk_set();
-		__delay_cycles(100); // 100 cycles = 500ns
+    // Incorporate the incoming data
+    result <<= 1;
+    if (miso_rd())
+      result++;
+    
+    __delay_cycles(MCP3208_THI_CYC);
+  }
 
-	// Channel Selection D2, D1, D0 configure
-	sclk_clr();
-	if(ch == 1 || ch == 2 || ch == 3 || ch == 4)  // D2
-		mosi_clr();
-	else
-		mosi_set();
-	__delay_cycles(100); // 100 cycles = 500ns
-		sclk_set();
-		__delay_cycles(100); // 100 cycles = 500ns
-
-	if(ch == 1 || ch == 2 || ch == 5 || ch == 6)  // D1
-		mosi_clr();
-	else
-		mosi_set();
-	__delay_cycles(100); // 100 cycles = 500ns
-		sclk_set();
-		__delay_cycles(100); // 100 cycles = 500ns
-
-	if(ch ==1 || ch%2 != 0)  //D0
-		mosi_clr();
-	else
-		mosi_set();
-	__delay_cycles(100); // 100 cycles = 500ns
-        sclk_set();
-        __delay_cycles(100); // 100 cycles = 500ns
-
-	// Wait while device samples channel
-	sclk_clr();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr(); // Sampling completed
-
-	 uint16_t result = 0;
-
-	// Read null bit
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	int null_bit = miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b11
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b10
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b9
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b8
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b7
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b6
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b5
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b4
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b3
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b2
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b1
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	// Read b0
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_set();
-	result <<= 1;
-	result |= miso_rd();
-	__delay_cycles(100); // 100 cycles = 500ns
-	sclk_clr();
-
-	cs_set(); // Release SPI bus
-
-	return result;
+  cs_set(); // Release SPI bus
+  return result;
 }
+
 
 void main() {
   // Clear any pending PRU-generated events
@@ -243,23 +138,22 @@ void main() {
   
   // Start timer
   start_pru0_timer();
-  
-  int i = 0;
   for (;;) {
     volatile Buffer *curr_buff = buffer + *buffer_index;
     curr_buff->timestamp_ns = clock_ns();
-    curr_buff->data[0] = ++i;
-    curr_buff->data[1] = -i;
-    curr_buff->data[2] = 2*i;
-    curr_buff->data[3] = 4*i;
-
+    
+    uint8_t i;
+    for (i=0; i<DATA_BUFFER_LEN; i++) {
+      uint8_t ctrl = scan_ctrl[i % NUM_SCAN_ELEMENTS];
+      curr_buff->data[i] = convert(ctrl);
+      __delay_cycles(MCP3208_TCSH_CYC);
+    }
+    
     // Switch buffers
     *buffer_index ^= 1;
     
     // Trigger event
     PRU0_PRU1_TRIGGER;
-    
-    __delay_cycles(480000 - 2640/5 - 350);
   }
   
   __halt();
