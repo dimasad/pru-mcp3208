@@ -42,13 +42,9 @@ int main(void) {
     result = read(fd, readBuf, sizeof readBuf);
     if (result == sizeof(Buffer)) {
       Buffer *b = (Buffer *) readBuf;
-      unsigned long long ts = b->timestamp_ns;
-      unsigned d0 = b->data[0];
-      unsigned d1 = b->data[1];
-      unsigned d2 = b->data[2];
-      unsigned d3 = b->data[3];
-      printf("timestamp=%llu, d0=%u, d1=%u, d2=%u, d3=%u\n",
-             ts, d0, d1, d2, d3);
+      for (int i=0; i<8; i++)
+        printf("ch%d=%4" PRIu16 ", ", i, b->data[i]);
+      printf("timestamp=%" PRIu64 "\n", b->timestamp_ns);
     } else if (result < 0) {
       perror("Error reading from device");
       return -1;

@@ -41,6 +41,10 @@ deploy: install
 	-echo stop > $(RPROC)/state
 	echo $(PROJ_NAME) > $(RPROC)/firmware
 	echo start > $(RPROC)/state
+	config-pin P9_28 pruout
+	config-pin P9_29 pruin
+	config-pin P9_30 pruout
+	config-pin P9_31 pruout
 
 # Invokes the linker (-z flag) to make the .out file
 $(TARGET): $(OBJECTS) $(LINKER_COMMAND_FILE)
