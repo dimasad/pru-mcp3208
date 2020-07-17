@@ -259,7 +259,7 @@ void main() {
     // Trigger event
     PRU0_PRU1_TRIGGER;
     
-    __delay_cycles(100000000 - 2640/5);
+    __delay_cycles(480000 - 2640/5 - 350);
   }
   
   __halt();

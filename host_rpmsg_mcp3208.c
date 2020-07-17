@@ -32,7 +32,7 @@ int main(void) {
   
   for(;;) {
     /* Kick the PRU through the RPMsg channel */
-    int result = 0; //write(fd, 0, 0);
+    int result = write(fd, 0, 0);
     if (result < 0) {
       perror("Error writing to PRU");
       return -1;
@@ -47,7 +47,8 @@ int main(void) {
       unsigned d1 = b->data[1];
       unsigned d2 = b->data[2];
       unsigned d3 = b->data[3];
-      printf("timestamp=%llu, d0=%u, d1=%u, d2=%u, d3=%u \n", ts, d0, d1, d2, d3);
+      printf("timestamp=%llu, d0=%u, d1=%u, d2=%u, d3=%u\n",
+             ts, d0, d1, d2, d3);
     } else if (result < 0) {
       perror("Error reading from device");
       return -1;

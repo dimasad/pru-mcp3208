@@ -21,11 +21,13 @@ volatile register uint32_t __R31;
 #define HOST1_INT			((uint32_t) 1 << 31)
 
 /* The PRU-ICSS system events for RPMsg are defined in the Linux device tree
- * PRU0 uses system event 16 (To ARM) and 17 (From ARM)
- * PRU1 uses system event 18 (To ARM) and 19 (From ARM)
+ * PRU0 uses system event 16 (To ARM) and 17 (From ARM).
+ * PRU1 uses system event 18 (To ARM) and 19 (From ARM).
+ * Our application used event 20 to notify PRU1 from PRU0.
  */
 #define TO_ARM_HOST			18
 #define FROM_ARM_HOST			19
+#define PRU0_PRU1_EVT                   20
 
 #define CHAN_NAME			"rpmsg-pru"
 #define CHAN_DESC			"Channel 1"
@@ -39,15 +41,15 @@ volatile register uint32_t __R31;
  */
 #define VIRTIO_CONFIG_S_DRIVER_OK	4
 
-#define NUM_OUT_BUFFERS                 2
-Buffer out_buffer[NUM_OUT_BUFFERS];
-uint8_t out_buffer_status[NUM_OUT_BUFFERS];
-uint8_t out_buffer_index;
 
-enum {
-  BUFFER_FREE = 0,
-  BUFFER_FULL = 1,
-};
+// Define the output queue
+#define MAX_QUEUE_SIZE                  4
+Buffer queue[MAX_QUEUE_SIZE];
+uint8_t queue_head;
+uint8_t queue_size;
+
+// Incoming message payload
+uint8_t in_payload[RPMSG_MESSAGE_SIZE];
 
 void main(void) {
   struct pru_rpmsg_transport transport;
@@ -73,22 +75,46 @@ void main(void) {
   
   /* Create the RPMsg channel between the PRU and ARM user space using the
      transport structure. */
-  while (pru_rpmsg_channel(RPMSG_NS_CREATE, &transport, CHAN_NAME, CHAN_DESC, CHAN_PORT)
-         != PRU_RPMSG_SUCCESS);
+  while (pru_rpmsg_channel(RPMSG_NS_CREATE, &transport, CHAN_NAME,
+                           CHAN_DESC, CHAN_PORT) != PRU_RPMSG_SUCCESS);
   
   for (;;) {
-    // Wait for PRU 0
-    while((__R31 & HOST0_INT) == 0);
-    
-    // Clear event 20
-    CT_INTC.SICR = 20;
+    // Check for new data from PRU0
+    if (__R31 & HOST0_INT) {
+      // Clear the event status
+      CT_INTC.SICR = PRU0_PRU1_EVT;
 
-    uint8_t completed_buffer_index = *buffer_index ? 0 : 1;
-    volatile Buffer *completed_buffer = buffer + completed_buffer_index;
-    memcpy(out_buffer, completed_buffer, sizeof(Buffer));
-    
-    // Send message to ARM
-    pru_rpmsg_send(&transport, CHAN_PORT, PRU1_RPMSG_SRC,
-                   out_buffer, sizeof(Buffer));
+      uint8_t completed_buffer_index = *buffer_index ? 0 : 1;
+      void *completed_buffer = buffer + completed_buffer_index;
+
+      uint8_t queue_tail = (queue_head + queue_size) % MAX_QUEUE_SIZE;
+      memcpy(queue + queue_tail, completed_buffer, sizeof(Buffer));
+      if (queue_size < MAX_QUEUE_SIZE)
+        queue_size++;
+      else
+        queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
+    }
+
+    // Check for a data request from the ARM host, and if it can be fulfilled
+    if (__R31 & HOST1_INT && queue_size) {
+      // Get the message
+      int16_t status;
+      status = pru_rpmsg_receive(&transport, &src, &dst, in_payload, &len);
+      
+      // If there are no more messages, then clear the interrupt event status
+      if (status == PRU_RPMSG_NO_BUF_AVAILABLE)
+        CT_INTC.SICR_bit.STS_CLR_IDX = FROM_ARM_HOST;
+      
+      // If a message was received, then send the data from the queue
+      if (status == PRU_RPMSG_SUCCESS) {
+        // Send the data back
+        void *out_buffer = queue + queue_head;
+        pru_rpmsg_send(&transport, dst, src, out_buffer, sizeof(Buffer));
+
+        // Update the queue
+        queue_size--;
+        queue_head = (queue_head + 1) % MAX_QUEUE_SIZE;
+      }
+    }
   }
 }
