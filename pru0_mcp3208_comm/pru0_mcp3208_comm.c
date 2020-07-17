@@ -30,10 +30,10 @@ volatile register uint32_t __R31;
 #define CS_MASK   (1 << 3)
 
 // MCP3208 timing delays, in PRU cycles (200MHz ==> 5ns / cycle)
-#define MCP3208_TSUCS_CYC    30 //CS~ Fall to First Rising CLK edge (min 100ns)
-#define MCP3208_THI_CYC      200 //Clock High Time (min 250ns)
-#define MCP3208_TLO_CYC      200 //Clock Low Time (min 250ns)
-#define MCP3208_TCSH_CYC     200//CS~ Disable Time (min 500ns)
+#define MCP3208_TSUCS_CYC    40  //CS~ Fall to First Rising CLK edge (min 100ns)
+#define MCP3208_THI_CYC      100 //Clock High Time (min 250ns)
+#define MCP3208_TLO_CYC      100 //Clock Low Time (min 250ns)
+#define MCP3208_TCSH_CYC     200 //CS~ Disable Time (min 500ns)
 
 // Control bits of the scan elements
 static uint8_t scan_ctrl[NUM_SCAN_ELEMENTS] = {
@@ -139,14 +139,9 @@ void main() {
   // Start timer
   start_pru0_timer();
   for (;;) {
-    //volatile Buffer *curr_buff = buffer + *buffer_index;
-    volatile Buffer *curr_buff;
-    if (*buffer_index)
-      curr_buff = buffer;
-    else
-      curr_buff = buffer + 1;
+    volatile Buffer *curr_buff = buffer + *buffer_index;
     curr_buff->timestamp_ns = clock_ns();
-
+    
     int i;
     for (i=0; i<DATA_BUFFER_LEN; i++) {
       uint8_t ctrl = scan_ctrl[i % NUM_SCAN_ELEMENTS];
@@ -156,6 +151,7 @@ void main() {
     
     // Switch buffers
     *buffer_index ^= 1;
+    *buffer_index &= 1; // For precaution
     
     // Trigger event
     PRU0_PRU1_TRIGGER;

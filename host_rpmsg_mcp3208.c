@@ -29,7 +29,8 @@ int main(void) {
     perror("Failed to open " DEVICE_NAME);
     return -1;
   }
-  
+
+  uint64_t last_ts = 0;
   for(;;) {
     /* Kick the PRU through the RPMsg channel */
     int result = write(fd, 0, 0);
@@ -42,9 +43,12 @@ int main(void) {
     result = read(fd, readBuf, sizeof readBuf);
     if (result == sizeof(Buffer)) {
       Buffer *b = (Buffer *) readBuf;
-      for (int i=0; i<8; i++)
+      for (int i=0; i<4; i++)
         printf("ch%d=%4" PRIu16 ", ", i, b->data[i]);
-      printf("timestamp=%" PRIu64 "\n", b->timestamp_ns);
+      printf("ts=%" PRIu64 ",\t", b->timestamp_ns);
+      printf("delta=%" PRIu64 ",\n", b->timestamp_ns - last_ts);
+
+      last_ts = b->timestamp_ns;
     } else if (result < 0) {
       perror("Error reading from device");
       return -1;
